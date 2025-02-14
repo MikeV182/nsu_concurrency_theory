@@ -5,10 +5,7 @@
 #include <inttypes.h>
 #include <vector>
 
-#include "pbPlots.hpp"
-#include "supportLib.hpp"
-
-#define NUM_THREADS 8
+#define NUM_THREADS 40
 #define MATRIX_SIZE 20000
 
 
@@ -97,27 +94,6 @@ void run_serial(const int m, const int n) {
     free(c);
 }
 
-void render_graph(std::vector<double> &x, std::vector<double> &y) {
-    RGBABitmapImageReference *imageRef = CreateRGBABitmapImageReference();
-    StringReference *errorMessage = CreateStringReferenceLengthValue(0, L' ');
-
-    bool result = DrawScatterPlot(imageRef, 600, 400, &x, &y, errorMessage);
-
-    if (result) {
-        std::vector<double> *pngData = ConvertToPNG(imageRef->image);
-        WriteToFile(pngData, "./plot.png");
-        DeleteImage(imageRef->image);
-    } else {
-        std::cerr << "Error: ";
-		for(wchar_t c : *errorMessage->string){
-			std::wcerr << c;
-		}
-		std::cerr << std::endl;
-    }
-
-    FreeAllocations();
-}
-
 int main(int argc, char **argv) {
     const int m = MATRIX_SIZE, n = MATRIX_SIZE;
     
@@ -125,11 +101,7 @@ int main(int argc, char **argv) {
     printf("Memory used: %" PRIu64 " MiB\n", ((m * n + m + n) * sizeof(double)) >> 20);
     
     run_serial(m, n);
-    run_parallel(m, n);
-    
-    std::vector<double> x{-2, -1, 0, 1, 2};
-    std::vector<double> y{2, -1, -2, -1, 2};
-    render_graph(x, y);
+    // run_parallel(m, n);
     
     return 0;
 }

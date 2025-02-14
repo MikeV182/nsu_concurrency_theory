@@ -1,2 +1,5 @@
 # Executable file
 a.out
+
+# IDE files
+.vscode

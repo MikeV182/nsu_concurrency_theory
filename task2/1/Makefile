@@ -1,10 +1,10 @@
 CC = g++
-CFLAGS = -O2 -Wall -fopenmp -lm # -lm Compiles against the shared library libm (basic math library, mostly C only)
+CFLAGS = -O2 -Wall -fopenmp
 
 all: main 
 
-main: main.cpp pbPlots.cpp supportLib.cpp
-	$(CC) $(CFLAGS) main.cpp pbPlots.cpp supportLib.cpp
+main: main.cpp
+	$(CC) $(CFLAGS) main.cpp
 
 clean:
 	rm -f a.out
