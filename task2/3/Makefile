@@ -14,6 +14,9 @@ task31: task31.cpp
 task32: task32.cpp
 	$(CC) $(CPARALLELFLAGS) task32.cpp
 
+task33: task33.cpp
+	$(CC) $(CPARALLELFLAGS) task33.cpp
+
 debug_main:
 	$(CC) $(DEBAGFLAG) main.cpp
 	gdb ./a.out
