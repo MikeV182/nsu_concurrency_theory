@@ -33,6 +33,6 @@ def plot_and_save(threads, times, speedups, filename_prefix):
     
     plt.show()
 
-for filename in ["task31.txt", "task32.txt"]:
+for filename in ["Out_task31.txt", "Out_task32.txt"]:
     threads, times, speedups = read_data(filename)
     plot_and_save(threads, times, speedups, filename.split('.')[0])

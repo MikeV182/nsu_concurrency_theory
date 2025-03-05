@@ -1,95 +1,104 @@
 #include <iostream>
+#include <vector>
 #include <cmath>
+#include <time.h>
+#include <omp.h>
 
 using namespace std;
 
-void sysout(double **a, double *y, int n)
+const double EPSILON = 1e-5;
+const double TAU = 0.000001; // 0.000001 and 10 000 for Execution time (serial): 173.691134
+
+using Vector = vector<double>;
+using Matrix = vector<Vector>;
+
+double norm(const Vector &v)
 {
-    for (int i = 0; i < n; i++)
+    double sum = 0.0;
+    for (double val : v)
     {
-        for (int j = 0; j < n; j++)
-        {
-            cout << a[i][j] << "*x" << j;
-            if (j < n - 1)
-                cout << " + ";
-        }
-        cout << " = " << y[i] << endl;
+        sum += val * val;
     }
+    return sqrt(sum);
 }
 
-double *gauss(double **a, double *y, int n)
+Vector multiply(const Matrix &A, const Vector &x)
 {
-    double *x = new double[n];
-    const double eps = 1e-5;
+    int n = A.size();
+    Vector result(n, 0.0);
+    for (int i = 0; i < n; ++i)
+    {
+        for (int j = 0; j < n; ++j)
+        {
+            result[i] += A[i][j] * x[j];
+        }
+    }
+    return result;
+}
 
-    for (int k = 0; k < n; k++)
+Vector simpleIterationMethod(const Matrix &A, const Vector &b)
+{
+    int n = A.size();
+    Vector x(n, 0.0);
+    Vector Ax(n);
+    while (true)
     {
-        int index = k;
-        double max = abs(a[k][k]);
-        for (int i = k + 1; i < n; i++)
+        Ax = multiply(A, x);
+        Vector r(n);
+        for (int i = 0; i < n; ++i)
         {
-            if (abs(a[i][k]) > max)
-            {
-                max = abs(a[i][k]);
-                index = i;
-            }
+            r[i] = Ax[i] - b[i];
         }
-        if (max < eps)
+
+        if (norm(r) / norm(b) < EPSILON)
         {
-            cout << "Решение невозможно из-за нулевого столбца " << index << " матрицы A" << endl;
-            return nullptr;
+            break;
         }
-        swap(a[k], a[index]);
-        swap(y[k], y[index]);
-        
-        for (int i = k; i < n; i++)
+
+        for (int i = 0; i < n; ++i)
         {
-            double temp = a[i][k];
-            if (abs(temp) < eps) continue;
-            for (int j = k; j < n; j++) a[i][j] /= temp;
-            y[i] /= temp;
-            if (i == k) continue;
-            for (int j = 0; j < n; j++) a[i][j] -= a[k][j];
-            y[i] -= y[k];
+            x[i] -= TAU * r[i];
         }
     }
-    
-    for (int k = n - 1; k >= 0; k--)
-    {
-        x[k] = y[k];
-        for (int i = 0; i < k; i++) y[i] -= a[i][k] * x[k];
-    }
+
     return x;
+}
+
+void initializeSystem(Matrix &A, Vector &b, int N)
+{
+    A.assign(N, Vector(N, 1.0));
+    for (int i = 0; i < N; ++i)
+    {
+        A[i][i] = 2.0;
+    }
+    b.assign(N, N + 1);
+}
+
+void printVector(const Vector &v)
+{
+    for (double val : v)
+    {
+        cout << val << " ";
+    }
+    cout << endl;
 }
 
 int main()
 {
-    int n;
-    cout << "Введите количество уравнений: ";
-    cin >> n;
-    
-    double **a = new double *[n];
-    double *y = new double[n];
-    for (int i = 0; i < n; i++)
-    {
-        a[i] = new double[n];
-        for (int j = 0; j < n; j++) a[i][j] = (i == j) ? 2.0 : 1.0;
-    }
-    for (int i = 0; i < n; i++) y[i] = n + 1;
-    
-    sysout(a, y, n);
-    double *x = gauss(a, y, n);
-    
-    if (x)
-    {
-        for (int i = 0; i < n; i++)
-            cout << "x[" << i << "] = " << x[i] << endl;
-        delete[] x;
-    }
-    
-    for (int i = 0; i < n; i++) delete[] a[i];
-    delete[] a;
-    delete[] y;
-    
+    int N;
+    cout << "Enter the number of equations (N): ";
+    cin >> N;
+
+    Matrix A;
+    Vector b;
+
+    initializeSystem(A, b, N);
+
+    double t = omp_get_wtime();
+    Vector solution = simpleIterationMethod(A, b);
+    t = omp_get_wtime() - t;
+
+    printf("Execution time (serial): %.6f\n", t);
+
     return 0;
 }
