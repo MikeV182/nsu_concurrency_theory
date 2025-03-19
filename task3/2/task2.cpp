@@ -8,6 +8,8 @@
 #include <functional>
 #include <string>
 #include <condition_variable>
+#include <sstream>
+#include <cassert>
 
 struct Task {
     std::string type;
@@ -119,6 +121,64 @@ void client(Server<double>& server, Task task, const std::string& filename) {
     }
 }
 
+void test_results(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Не удалось открыть файл " << filename << " для тестирования." << std::endl;
+        return;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string task_label;
+        size_t task_id;
+        double arg1, result, expected = 0.0;
+        int arg2 = 0;
+        bool valid = false;
+
+        iss >> task_label >> task_id >> std::ws;
+        std::string arg1_label;
+        iss >> arg1_label >> arg1;
+
+        if (arg1_label != "arg1:") {
+            std::cerr << "Ошибка формата в файле " << filename << ": " << line << std::endl;
+            continue;
+        }
+
+        std::string next_label;
+        iss >> next_label;
+
+        if (next_label == "arg2:") {
+            iss >> arg2;
+            iss >> next_label;
+            expected = std::pow(arg1, arg2);
+            valid = true;
+        } 
+        else if (next_label == "Result:") {
+            if (filename.find("Sinus") != std::string::npos) {
+                expected = std::sin(arg1);
+                valid = true;
+            } else if (filename.find("Square") != std::string::npos) {
+                expected = std::sqrt(arg1);
+                valid = true;
+            }
+        }
+
+        iss >> result;
+
+        if (!valid) {
+            std::cerr << "Ошибка в файле " << filename << ": не удалось определить тип задачи!" << std::endl;
+            continue;
+        }
+
+        // std::cout << "Сравнение: " << result << " (получено) vs " << expected << " (ожидалось)" << std::endl;
+        assert(std::abs(result - expected) / std::max(std::abs(expected), 1.0) < 1e-2); // it's better to use relative difference instead of absolute
+    }
+    std::cout << "Тест успешно пройден для " << filename << std::endl;
+}
+
+
 int main(int argc, char* argv[]) {
     if (argc != 7) {
         std::cerr << "Введите аргументы в формате: функция (Sinus, Square, Power), количество операций (от 5 до 10000)" << std::endl;
@@ -145,6 +205,10 @@ int main(int argc, char* argv[]) {
     client_serv3.join();
 
     server.stop();
+
+    test_results(file1);
+    test_results(file2);
+    test_results(file3);
 
     return 0;
 }
