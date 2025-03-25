@@ -3,3 +3,6 @@ a.out
 
 # IDE files
 .vscode
+
+# Python cache && venv
+__pycache__
