@@ -6,7 +6,6 @@ import threading
 import queue
 import os
 
-
 LOG_DIR = "log"
 os.makedirs(LOG_DIR, exist_ok=True)
 logging.basicConfig(filename=os.path.join(LOG_DIR, 'app.log'), level=logging.ERROR,
@@ -71,6 +70,13 @@ def sensor_worker(sensor, q):
         data = sensor.get()
         q.put(data)
 
+def get_latest_from_queue(q):
+    """Get the most recent item from queue, discarding older items"""
+    latest = None
+    while not q.empty():
+        latest = q.get()
+    return latest
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--camera', type=str, required=True, help='Camera system name, e.g., /dev/video0')
@@ -98,16 +104,22 @@ def main():
         t.start()
     
     sensor_data = {0: 0, 1: 0, 2: 0}
+    
     while True:
         try:
-            if not q0.empty():
-                sensor_data[0] = q0.get()
-            if not q1.empty():
-                sensor_data[1] = q1.get()
-            if not q2.empty():
-                sensor_data[2] = q2.get()
+            latest_val = get_latest_from_queue(q0)
+            if latest_val is not None:
+                sensor_data[0] = latest_val
+                
+            latest_val = get_latest_from_queue(q1)
+            if latest_val is not None:
+                sensor_data[1] = latest_val
+                
+            latest_val = get_latest_from_queue(q2)
+            if latest_val is not None:
+                sensor_data[2] = latest_val
             
-            frame = q_cam.get() if not q_cam.empty() else None
+            frame = get_latest_from_queue(q_cam)
             
             if frame is not None:
                 cv2.putText(frame, f"S0: {sensor_data[0]}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
