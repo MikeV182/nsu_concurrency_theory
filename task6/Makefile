@@ -12,3 +12,4 @@ gpu:
 	
 profile:
 	nsys profile --trace=nvtx,cuda,openacc --stats=true ./task_gpu --size=256 --accuracy=0.0001 --max_iterations=50
+
