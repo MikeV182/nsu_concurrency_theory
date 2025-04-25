@@ -29,15 +29,17 @@ void initialize_grid(double* grid, double* new_grid, size_t N) {
         grid[N * i + N - 1]   = tr + (br - tr) * i / (N - 1);           // right
     }
 
-    #pragma acc enter data copyin(grid[0:N*N], new_grid[0:N*N])
+    #pragma acc enter data copyin(grid[0:N*N], new_grid[0:N*N]) // copies data from the host to the accelerator when entering the 
+                                                                // data region indicated by the directive; however, 
+                                                                // it does not copy the data back to the host on exiting the data region.
 }
 
 double update_grid(double* grid, double* new_grid, size_t N, bool check_error) {
     double error = 0.0;
 
     if (check_error) {
-        #pragma acc parallel loop reduction(max:error) present(grid, new_grid)
-        for (int i = 1; i < N - 1; ++i) {
+        #pragma acc parallel loop reduction(max:error) present(grid, new_grid)  // present(list) - when entering the region, the data must be present
+        for (int i = 1; i < N - 1; ++i) {                                       // in device memory, and the structured reference count is incremented
             #pragma acc loop
             for (int j = 1; j < N - 1; ++j) {
                 int idx = i * N + j;
@@ -80,9 +82,9 @@ void copy_grid(double* grid, const double* new_grid, size_t N) {
 }
 
 void deallocate(double* grid, double* new_grid) {
-    #pragma acc exit data delete(grid[0:0], new_grid[0:0])
-    free(grid);
-    free(new_grid);
+    #pragma acc exit data delete(grid[0:0], new_grid[0:0])  // for data created with "enter data" the "exit data" moves data from device memory
+    free(grid);                                             // and deallocates the memory. With "delete" the dynamic reference count is decremented. 
+    free(new_grid);                                         // If reference counts are zero, the device memory is deallocated.
 }
 
 void print_grid(const double* grid, size_t N) {

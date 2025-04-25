@@ -30,10 +30,10 @@ void initialize_grid(double* grid, double* new_grid, size_t N) {
     }
 }
 
-double update_grid(const double* __restrict grid, double* __restrict new_grid, size_t N) {
+double update_grid(const double* __restrict grid, double* __restrict new_grid, size_t N) {  // __restrict decorators here inform the compiler that the pointers are not aliased
     double max_error = 0.0;
 
-    #pragma acc parallel loop reduction(max:max_error)
+    #pragma acc parallel loop reduction(max:max_error) // reduction reduces all those private copies into one final result. Here we requested a maximum of private max_errors
     for (int i = 1; i < N - 1; ++i) {
         #pragma acc loop
         for (int j = 1; j < N - 1; ++j) {
@@ -96,9 +96,9 @@ int main(int argc, char* argv[]) {
     double* grid     = (double*)malloc(sizeof(double) * N * N);
     double* new_grid = (double*)malloc(sizeof(double) * N * N);
 
-    nvtxRangePushA("Initialization");
+    nvtxRangePushA("Initialization");       // to see every time that a function is called and how long it takes to execute
     initialize_grid(grid, new_grid, N);
-    nvtxRangePop();
+    nvtxRangePop();                         // NVTX C API requires manually terminating the end of the range with nvtxRangePop
 
     double error = accuracy + 1.0;
     int iter = 0;
