@@ -8,7 +8,7 @@
 
 namespace po = boost::program_options;
 
-void initialize_grid(double* grid, double* new_grid, size_t N) {
+void initialize_grid(double* __restrict__ grid, double* __restrict__ new_grid, size_t N) {
     std::memset(grid, 0, N * N * sizeof(double));
     std::memset(new_grid, 0, N * N * sizeof(double));
 
@@ -34,60 +34,44 @@ void initialize_grid(double* grid, double* new_grid, size_t N) {
                                                                 // it does not copy the data back to the host on exiting the data region.
 }
 
-double update_grid(double* grid, double* new_grid, size_t N, bool check_error) {
+double update_grid(double* __restrict__ grid, double* __restrict__ new_grid, size_t N) {
     double error = 0.0;
 
-    if (check_error) {
-        #pragma acc parallel loop reduction(max:error) present(grid, new_grid)  // present(list) - when entering the region, the data must be present
-        for (int i = 1; i < N - 1; ++i) {                                       // in device memory, and the structured reference count is incremented
-            #pragma acc loop
-            for (int j = 1; j < N - 1; ++j) {
-                int idx = i * N + j;
-                new_grid[idx] = 0.25 * (
-                    grid[(i + 1) * N + j] +
-                    grid[(i - 1) * N + j] +
-                    grid[i * N + j - 1] +
-                    grid[i * N + j + 1]
-                );
-                error = fmax(error, fabs(new_grid[idx] - grid[idx]));
-            }
-        }
-    } else {
-        #pragma acc parallel loop present(grid, new_grid)
-        for (int i = 1; i < N - 1; ++i) {
-            #pragma acc loop
-            for (int j = 1; j < N - 1; ++j) {
-                int idx = i * N + j;
-                new_grid[idx] = 0.25 * (
-                    grid[(i + 1) * N + j] +
-                    grid[(i - 1) * N + j] +
-                    grid[i * N + j - 1] +
-                    grid[i * N + j + 1]
-                );
-            }
+    #pragma acc parallel loop collapse(2) reduction(max:error) present(grid, new_grid)  // present(list) - when entering the region, the data must be present
+    for (int i = 1; i < N - 1; ++i) {                                                   // in device memory, and the structured reference count is incremented
+        for (int j = 1; j < N - 1; ++j) {
+            int idx = i * N + j;
+                double up    = grid[(i - 1) * N + j];
+                double down  = grid[(i + 1) * N + j];
+                double left  = grid[i * N + (j - 1)];
+                double right = grid[i * N + (j + 1)];
+                double center = grid[idx];
+
+                new_grid[idx] = 0.25 * (up + down + left + right);
+
+                error = fmax(error, fabs(new_grid[idx] - center));
         }
     }
-
+    
     return error;
 }
 
-void copy_grid(double* grid, const double* new_grid, size_t N) {
-    #pragma acc parallel loop present(grid, new_grid)
+void copy_grid(double* __restrict__ grid, const double* __restrict__ new_grid, size_t N) {
+    #pragma acc parallel loop collapse(2) present(grid, new_grid)
     for (int i = 1; i < N - 1; ++i) {
-        #pragma acc loop
         for (int j = 1; j < N - 1; ++j) {
             grid[i * N + j] = new_grid[i * N + j];
         }
     }
 }
 
-void deallocate(double* grid, double* new_grid) {
+void deallocate(double* __restrict__ grid, double* __restrict__ new_grid) {
     #pragma acc exit data delete(grid[0:0], new_grid[0:0])  // for data created with "enter data" the "exit data" moves data from device memory
     free(grid);                                             // and deallocates the memory. With "delete" the dynamic reference count is decremented. 
     free(new_grid);                                         // If reference counts are zero, the device memory is deallocated.
 }
 
-void print_grid(const double* grid, size_t N) {
+void print_grid(const double* __restrict__ grid, size_t N) {
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
             std::cout << std::setprecision(4) << grid[i * N + j] << "  ";
@@ -134,13 +118,7 @@ int main(int argc, char* argv[]) {
     nvtxRangePushA("Main Loop");
     while (error > accuracy && iter < max_iterations) {
         nvtxRangePushA("Compute");
-
-        if (iter % 1000 == 0) {
-            error = update_grid(grid, new_grid, N, true);
-        } else {
-            update_grid(grid, new_grid, N, false);
-        }
-
+        error = update_grid(grid, new_grid, N);
         nvtxRangePop();
 
         nvtxRangePushA("Copy");
