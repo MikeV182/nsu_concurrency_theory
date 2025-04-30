@@ -61,8 +61,14 @@ void freeGrids(double* grid, double* gridNew) {
 
 void solve(double* __restrict__ grid, double* __restrict__ gridNew, int size, double accuracy, int maxIters) {
     double* errorGrid;
+    
+    // cudaError_t cudaMalloc(void** devPtr, size_t size);
+    //      devPtr - указывает на выделенную область памяти в глобальной памяти GPU
+    //      size - кол-во байт, которые нужно выделить
     cudaMalloc((void**)&errorGrid, sizeof(double) * size * size);
 
+    // Переменная будет жить до конца области видимости. Когда solve() завершиться, она уничтожиться
+    // автоматически и вызовет CublasHandleDeleter, освобождая ресурсы cuBLAS и память.
     auto handle = createCublasHandle();
 
     double error = accuracy + 1.0;
@@ -73,7 +79,8 @@ void solve(double* __restrict__ grid, double* __restrict__ gridNew, int size, do
 
     nvtxRangePushA("computation");
 
-    #pragma acc data copy(grid[0:size*size], gridNew[0:size*size]) create(errorGrid[0:size*size])
+    // copy() копирует массивы grid && gridNew с CPU на GPU, после завершения блока ресурсы копируются обратно на CPU
+    #pragma acc data copy(grid[0:size*size], gridNew[0:size*size]) present(errorGrid[0:size*size])
     {
         while (error > accuracy && iter < maxIters) {
             nvtxRangePushA("update_grid");
@@ -101,9 +108,15 @@ void solve(double* __restrict__ grid, double* __restrict__ gridNew, int size, do
                     }
                 }
 
+                // Если опустить host_data use_device(), то cublasIdamax() получил бы CPU-указатель на errorGrid (строка 63),
+                // который не имеет смысла на GPU, отчего могло бы возникнуть неправильное поведение программы.
                 #pragma acc host_data use_device(errorGrid)
                 {
+                    // Находит индекс максимального по модулю элемента в массиве errorGrid на GPU.
                     cublasIdamax(*handle, size * size, errorGrid, 1, &maxErrorIdx);
+
+                    // Копирует значение элемента errorGrid[maxErrorIdx - 1] из GPU в CPU (максимальная ошибка между итерациями).
+                    // maxErrorIdx - 1 потому что cublasIdamax() возвращает индексацию от 1 до N.
                     cudaMemcpy(&error, &errorGrid[maxErrorIdx - 1], sizeof(double), cudaMemcpyDeviceToHost);
                 }
 
@@ -158,6 +171,8 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Running GPU simulation with cuBLAS for reduction...\n\n";
 
+    // malloc возвращает void*, а в С++ не разрешено неявное преобразование (void* -> double*). Так,
+    // static_cast позволяет явно указать компиллятору о своей осведомлённости преобразованием типов
     double* grid = static_cast<double*>(malloc(sizeof(double) * gridSize * gridSize));
     double* gridNew = static_cast<double*>(malloc(sizeof(double) * gridSize * gridSize));
 
