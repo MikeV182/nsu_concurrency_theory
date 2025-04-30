@@ -8,6 +8,7 @@
 #include <cublas_v2.h>
 #include <nvtx3/nvToolsExt.h>
 #include <boost/program_options.hpp>
+#include <openacc.h>
 
 namespace po = boost::program_options;
 
@@ -66,6 +67,10 @@ void solve(double* __restrict__ grid, double* __restrict__ gridNew, int size, do
     //      devPtr - указывает на выделенную область памяти в глобальной памяти GPU
     //      size - кол-во байт, которые нужно выделить
     cudaMalloc((void**)&errorGrid, sizeof(double) * size * size);
+
+    // Функция нужна, чтобы OpenACC добавил выделенную cudaMalloc память в свою таблицу сопоставлений и
+    // present(errorGrid[0:size*size]) корректно сработал на 88-ой строке.
+    acc_map_data(errorGrid, errorGrid, sizeof(double) * size * size);
 
     // Переменная будет жить до конца области видимости. Когда solve() завершиться, она уничтожиться
     // автоматически и вызовет CublasHandleDeleter, освобождая ресурсы cuBLAS и память.
@@ -145,6 +150,7 @@ void solve(double* __restrict__ grid, double* __restrict__ gridNew, int size, do
               << "Iterations:  " << iter << "\n"
               << "Error value: " << error << std::endl;
 
+    acc_unmap_data(errorGrid);
     cudaFree(errorGrid);
 }
 
