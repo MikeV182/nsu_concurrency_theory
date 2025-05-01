@@ -11,7 +11,7 @@ namespace po = boost::program_options;
 
 #define BLOCK_SIZE 256
 
-__device__ double atomicMaxDouble(double* address, double val) {
+__device__ double atomicMaxDouble(double* address, double val) { // вызывается из другого GPU-кода и выполняется на GPU
     unsigned long long int* address_as_ull =
         (unsigned long long int*)address;
     unsigned long long int old = *address_as_ull, assumed;
@@ -23,7 +23,7 @@ __device__ double atomicMaxDouble(double* address, double val) {
     return __longlong_as_double(old);
 }
 
-__global__ void updateGridKernel(double* grid, double* gridNew, int size) {
+__global__ void updateGridKernel(double* grid, double* gridNew, int size) { // выполняется на GPU, вызывается с хоста
     int i = blockIdx.y * blockDim.y + threadIdx.y + 1;
     int j = blockIdx.x * blockDim.x + threadIdx.x + 1;
 
@@ -48,7 +48,7 @@ __global__ void copyGridKernel(double* grid, double* gridNew, int size) {
 
 __global__ void computeErrorKernel(const double* grid, const double* gridNew, double* error, int size) {
     typedef cub::BlockReduce<double, BLOCK_SIZE> BlockReduce;
-    __shared__ typename BlockReduce::TempStorage temp_storage;
+    __shared__ typename BlockReduce::TempStorage temp_storage; // BlockReduce использует __shared__ память, чтобы потоки внутри блока могли обмениваться промежуточными результатами.
 
     double localMax = 0.0;
     for (int idx = threadIdx.x + blockIdx.x * blockDim.x;
@@ -59,13 +59,13 @@ __global__ void computeErrorKernel(const double* grid, const double* gridNew, do
         if (i > 0 && i < size - 1 && j > 0 && j < size - 1) {
             double diff = fabs(grid[idx] - gridNew[idx]);
             if (diff > localMax)
-                localMax = diff;
+                localMax = diff; // каждый поток находит своё локальное значение.
         }
     }
 
-    double blockMax = BlockReduce(temp_storage).Reduce(localMax, cub::Max());
+    double blockMax = BlockReduce(temp_storage).Reduce(localMax, cub::Max()); // агрегирует все эти значения в один максимум — blockMax для блока.
     if (threadIdx.x == 0) {
-        atomicMaxDouble(error, blockMax);
+        atomicMaxDouble(error, blockMax); // один поток делает atomicMaxDouble(...), чтобы обновить глобальную ошибку.
     }
 }
 
@@ -107,15 +107,16 @@ void solve(int size, double accuracy, int maxIterations) {
     cudaMemcpy(d_grid, grid, gridBytes, cudaMemcpyHostToDevice);
     cudaMemcpy(d_gridNew, gridNew, gridBytes, cudaMemcpyHostToDevice);
 
-    dim3 blockDim(16, 16);                                  // размеры одного блока в потоках
-    dim3 gridDim((size + blockDim.x - 3) / (blockDim.x),    // размер сетки в блоках
+    // параметры CUDA-ядра
+    dim3 blockDim(16, 16);                                  // размеры одного блока (логической группы потоков) в потоках (blockDim.x = 16 | blockDim.y = 16 | 256 потоков в одном блоке)
+    dim3 gridDim((size + blockDim.x - 3) / (blockDim.x),    // размер сетки в блоках (-3 т.к. границы сетки не обрабатываются)
                  (size + blockDim.y - 3) / (blockDim.y));
 
     int iter = 0;
     double error = accuracy + 1.0;
 
     cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    cudaStreamCreate(&stream); // создание потока CUDA который управляет порядком выполнения задач на GPU. Не зависит от default stream. Нужен чтобы захватить последовательность операций в CUDA Graph.
 
     cudaGraph_t graph;
     cudaGraphExec_t instance;
@@ -129,16 +130,22 @@ void solve(int size, double accuracy, int maxIterations) {
 
     while (error > accuracy && iter < maxIterations) {
         cudaGraphLaunch(instance, stream);
+
+        // можно безопасно вызвать std::swap(...) и перейти к следующему шагу. А без этой строки GPU бы продолжил работать над ядром,
+        // в то время как CPU пошёл бы дальше. !!! CUDA не ждёт, пока kernel завершится, а просто ставит его в очередь !!!
         cudaStreamSynchronize(stream);
 
         std::swap(d_grid, d_gridNew);
 
         if (iter % 1000 == 0) {
             *d_error = 0.0;
+
+            // запускаем ((size * size + BLOCK_SIZE - 1) / BLOCK_SIZE) блоков, 
+            // в каждом по BLOCK_SIZE потоков
             computeErrorKernel<<<(size * size + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
                 d_grid, d_gridNew, d_error, size
             );
-            cudaDeviceSynchronize();
+            cudaDeviceSynchronize(); // блокируем вызовы на хосте до того как все вычисления на GPU не закончатся. Нужно чтобы корректно проверять условие завершения цикла по ошибке.
             error = *d_error;
         }
 
