@@ -145,8 +145,11 @@ void solve(int size, double accuracy, int maxIterations) {
             computeErrorKernel<<<(size * size + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
                 d_grid, d_gridNew, d_error, size
             );
-            cudaDeviceSynchronize(); // блокируем вызовы на хосте до того как все вычисления на GPU не закончатся. Нужно чтобы корректно проверять условие завершения цикла по ошибке.
+            cudaDeviceSynchronize();
             error = *d_error;
+
+            // Печать промежуточных результатов
+            std::cout << "Iteration: " << iter << " | Error: " << error << std::endl;
         }
 
         ++iter;
